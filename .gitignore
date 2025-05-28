@@ -19,3 +19,5 @@ checkpoints/
 # Ignore OS files
 .DS_Store
 Thumbs.db
+# Folder with name 1
+1/

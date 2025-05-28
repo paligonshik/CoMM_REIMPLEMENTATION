@@ -8,8 +8,8 @@ from tqdm import tqdm
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from dataloaders.data_loaders import MMIMDBDataModule
-from enoders.blip import Blip2LanguageTransformer, Blip2VisionTransformer
+# from dataloaders.data_loaders import MMIMDBDataModule
+# from enoders.blip import Blip2LanguageTransformer, Blip2VisionTransformer
 from torchvision import transforms # type: ignore
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 from typing import List
 from lavis.models import load_model
-from utils.utils import GaussianBlur
+# from utils.utils import GaussianBlur
 
 import json
 import random
@@ -106,7 +106,7 @@ from pathlib import Path
 import json
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
-from utils.utils import GaussianBlur, get_unique_genres
+# from utils.utils import GaussianBlur, get_unique_genres
 import pytorch_lightning as pl
 from PIL import Image
 import torch
@@ -128,8 +128,8 @@ def collate(batch):
 class MMIMDBDataModule(pl.LightningDataModule):
     def __init__(
         self,
-        train_json="../../data/train.json",
-        dev_json="../../data/dev.json",
+        train_json="train.json",
+        dev_json="dev.json",
         batch_size=64,
         num_workers=8,
     ):
@@ -247,7 +247,7 @@ import torch
 import torch.nn as nn
 from typing import List
 from lavis.models import load_model
-from utils.utils import TextMasking
+
 
 
 class Blip2VisionTransformer(nn.Module):
@@ -593,7 +593,7 @@ def main():
         train_len=train_len,
     )
 
-    wandb_logger = WandbLogger(project="last_time", name="final_shot", log_model=True)
+    wandb_logger = WandbLogger(project="last_time", name="trial", log_model=True)
 
     ckpt = ModelCheckpoint(
         dirpath="checkpoints",
@@ -608,7 +608,7 @@ def main():
     trainer = pl.Trainer(
         max_epochs=100,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
-        devices="auto",
+        devices=1,
         strategy="ddp" if torch.cuda.device_count() > 1 else "auto",
         callbacks=[ckpt, lr_monitor],
         logger=wandb_logger,
@@ -618,3 +618,7 @@ def main():
 
     trainer.fit(model, dm)
     print(f"\nBest checkpoint stored at: {ckpt.best_model_path}")
+
+
+if __name__ == "__main__":
+    main()

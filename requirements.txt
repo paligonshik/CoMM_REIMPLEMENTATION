@@ -3,3 +3,4 @@ accelerate
 salesforce-lavis
 pytorch_lightning
 opencv-python
+tensorboard
