@@ -140,3 +140,63 @@ class MMIMDBDataset(Dataset):
         plot = item["plot"] 
         return  [img_a, plot], [img_b, plot]
     
+
+
+
+class IMDbSupDataset(Dataset):
+    def __init__(self, json_path: str, genre2idx: dict[str, int], train=True):
+        super().__init__()
+        self.items = json.load(open(json_path))
+        self.g2i   = genre2idx
+        self.train = train
+
+        norm = transforms.Normalize([0.485,0.456,0.406], [0.229,0.224,0.225])
+        self.tf_train = transforms.Compose([
+            transforms.Resize(224), transforms.CenterCrop(224),
+            transforms.ToTensor(), norm
+        ])
+        self.tf_test = transforms.Compose([
+            transforms.Resize(224), transforms.CenterCrop(224),
+            transforms.ToTensor(), norm
+        ])
+
+    def _multi_hot(self, genres):
+        y = torch.zeros(len(self.g2i))
+        for g in genres:
+            if g in self.g2i: y[self.g2i[g]] = 1.
+        return y
+
+    def __getitem__(self, idx):
+        item  = self.items[idx]
+        img   = Image.open(item["image_path"]).convert("RGB")
+        img   = self.tf_train(img) if self.train else self.tf_test(img)
+        plot  = item["plot"]
+        label = self._multi_hot(item["genres"])
+        return img, plot, label
+
+    def __len__(self): return len(self.items)
+
+
+class IMDbDataModule(pl.LightningDataModule):
+    def __init__(self, batch_size=128, num_workers=8,
+                 train_json="train.json", dev_json="dev.json",
+                 test_json="test.json"):
+        super().__init__()
+        self.bs, self.nw = batch_size, num_workers
+        genres = get_unique_genres(train_json)
+        self.g2i = {g:i for i,g in enumerate(sorted(genres))}
+        self.train_json, self.dev_json = train_json, dev_json
+        self.test_json = test_json
+
+    def setup(self, stage=None):
+        self.train_set = IMDbSupDataset(self.train_json, self.g2i, train=True)
+        self.val_set   = IMDbSupDataset(self.dev_json,  self.g2i, train=False)
+        self.test_set  = IMDbSupDataset(self.test_json, self.g2i, train=False)
+
+    def train_dataloader(self):
+        return DataLoader(self.train_set, self.bs, True,  num_workers=self.nw)
+
+    def val_dataloader(self):
+        return DataLoader(self.val_set,   self.bs, False, num_workers=self.nw)
+    def test_dataloader(self):
+        return DataLoader(self.test_set,  self.bs, False, num_workers=self.nw)
