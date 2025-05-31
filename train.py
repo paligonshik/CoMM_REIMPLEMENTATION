@@ -1,372 +1,26 @@
 
 # -----------------------------------------------------------
-from torch.nn import BatchNorm1d
-import os, math, json, random, torch
+
+import math
+import torch
 from pathlib import Path
 from PIL import Image
-from tqdm import tqdm
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
-# from dataloaders.data_loaders import MMIMDBDataModule
-# from enoders.blip import Blip2LanguageTransformer, Blip2VisionTransformer
-from torchvision import transforms # type: ignore
+from src.dataloaders.data_loaders import MMIMDBDataModule
+from src.enoders.blip import Blip2LanguageTransformer, Blip2VisionTransformer
+from torchvision import transforms
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
-import torch.distributed as dist
-import torch
-import torch.nn as nn
 from typing import List
 from lavis.models import load_model
-# from utils.utils import GaussianBlur
-
-import json
-import random
-import torch
-from typing import Optional, List
-
-from PIL import ImageFilter 
-class TextMasking(torch.nn.Module):
-    """
-        Randomly mask input tokens using a special `mask` token.
-    """
-    def __init__(self, mask_prob: float, mask_token_id: int, mask_ignored_ids: Optional[List[int]] = None) -> None:
-        super().__init__()
-        self.mask_prob = mask_prob
-        self.mask_token_id = mask_token_id
-        self.mask_ignored_ids = mask_ignored_ids or [] # ignore these tokens for masking
-
-    def _init_full_mask(self, seq: torch.Tensor) -> torch.Tensor:
-        # Returns `True` for tokens to not ignore in `seq`
-        full_mask = torch.full_like(seq, True, dtype=torch.bool)
-        for ignored_id in self.mask_ignored_ids:
-            full_mask &= (seq != ignored_id)
-        return full_mask
-
-    def _get_mask_subset_with_prob(self, mask: torch.Tensor) -> torch.Tensor:
-        # Returns a subset of input `mask`
-        random_mask = torch.rand(mask.shape, device=mask.device) < self.mask_prob
-        mask &= random_mask
-        return mask
-
-    def forward(self, seq: torch.Tensor) -> torch.Tensor:
-        if not self.training or self.mask_prob == 0:
-            return seq
-        else:
-            mask = self._init_full_mask(seq)
-            mask = self._get_mask_subset_with_prob(mask)
-            masked_seq = seq.clone().detach()
-            masked_seq.masked_fill_(mask, self.mask_token_id)
-            return masked_seq
-        
-
-
-class GaussianBlur(object):
-    """Gaussian blur augmentation in SimCLR https://arxiv.org/abs/2002.05709"""
-
-    def __init__(self, sigma=[.1, 2.]):
-        self.sigma = sigma
-
-    def __call__(self, x):
-        sigma = random.uniform(self.sigma[0], self.sigma[1])
-        x = x.filter(ImageFilter.GaussianBlur(radius=sigma))
-        return x
-    
-
-
-
-
-def get_unique_genres(json_file: str):
-    with open(json_file, "r") as f:
-        movies = json.load(f)
-    unique = set()
-    for m in movies:
-        for g in m.get("genres", []):
-            unique.add(g)
-    return unique
-def is_dist_avail_and_initialized():
-    if not dist.is_available():
-        return False
-    if not dist.is_initialized():
-        return False
-    return True
-
-import pytorch_lightning as pl  # type: ignore # noqa: E402
-from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor  # type: ignore # noqa: E402
-from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger  # type: ignore # noqa: E402
-
-Image.MAX_IMAGE_PIXELS = None
-
-from collections import OrderedDict  # noqa: E402
-from PIL import ImageFilter  # noqa: E402
-import torch.autograd as autograd  # noqa: E402
-
-
-from pathlib import Path
-import json
-from torch.utils.data import Dataset, DataLoader
-import torchvision.transforms as transforms
-# from utils.utils import GaussianBlur, get_unique_genres
+from collections import OrderedDict
 import pytorch_lightning as pl
-from PIL import Image
-import torch
-
-
-
-def collate(batch):
-    imgs_a, imgs_b, plots = [], [], []
-    for (i_a, p_a), (i_b, p_b) in batch:
-        imgs_a.append(i_a)
-        imgs_b.append(i_b)
-        plots.append((p_a, p_b))
-    imgs_a = torch.stack(imgs_a)        # (B,C,H,W)
-    imgs_b = torch.stack(imgs_b)
-    plots_a, plots_b = zip(*plots)      # tuples of str
-    return (imgs_a, list(plots_a)), (imgs_b, list(plots_b))
-
-
-class MMIMDBDataModule(pl.LightningDataModule):
-    def __init__(
-        self,
-        train_json="train.json",
-        dev_json="dev.json",
-        batch_size=64,
-        num_workers=8,
-    ):
-        super().__init__()
-        self.train_json, self.dev_json = Path(train_json), Path(dev_json)
-        self.batch_size = batch_size
-        self.num_workers = num_workers
-        genres = get_unique_genres(self.train_json)
-        self.genre2idx = {g: i for i, g in enumerate(sorted(genres))}
-
-    def setup(self, stage=None):
-        self.train_ds = MMIMDBDataset(self.train_json, self.genre2idx,train=True)
-        self.val_ds = MMIMDBDataset(self.dev_json, self.genre2idx, train=False)
-
-    def train_dataloader(self):
-
-        return DataLoader(
-            self.train_ds,
-            batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=self.num_workers,
-            pin_memory=False,
-            collate_fn=collate
-        )
-    def val_dataloader(self):
-
-        return DataLoader(
-            self.val_ds,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            pin_memory=False,
-            collate_fn=collate
-        )
-    
-
-
-
-class MMIMDBDataset(Dataset):
-    """I/O + lightweight transforms only – **no heavy encoders here**."""
-
-    def __init__(
-        self,
-        json_path: str,
-        genre2idx: dict[str, int],
-        tokenizer_name: str = "Salesforce/blip2-itm-vit-g",
-        max_length: int = 128,
-        train=True
-    ):
-        super().__init__()
-        self.data = json.load(open(json_path))
-        self.genre2idx = genre2idx
-        self.max_length = max_length
-        self.train=train
-
-        # ---- transforms -----------------------------------------------------
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor  # type: ignore
+from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
+from src.utils.utils import all_gather_batch_with_grad  # type: ignore # noqa: E402
         
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                         std=[0.229, 0.224, 0.225])
-        min_scale = 0.5  # same as “crop-0.08”; tweak if you’re varying s via img_augment
-        self.simclr = transforms.Compose([
-                    transforms.RandomResizedCrop(224, scale=(min_scale, 1.)),
-                    transforms.RandomApply([
-                        transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)  # not strengthened
-                    ], p=0.8),
-                    transforms.RandomGrayscale(p=0.2),
-                    transforms.RandomApply([GaussianBlur([.1, 2.])], p=0.5),
-                    transforms.RandomHorizontalFlip(),
-                    transforms.ToTensor(),
-                    normalize
-                ])
-        
-        # 2) Single-view “projection” (test) transform
-        self.image_proc = transforms.Compose([
-            transforms.Resize(224),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            normalize,
-        ])
-        
-        self.train=train
-            
-    # ----- utils ------------------------------------------------------------
-    def _multi_hot(self, genres):
-        y = torch.zeros(len(self.genre2idx), dtype=torch.float32)
-        for g in genres:
-            if g in self.genre2idx:
-                y[self.genre2idx[g]] = 1.0
-        return y
-
-    # -----------------------------------------------------------------------
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        
-        
-        item = self.data[idx]
-
-        # -------- images ---------------------------------------------------
-        img = Image.open(item["image_path"]).convert("RGB")
-        if self.train:
-            img_a, img_b = self.simclr(img), self.simclr(img)
-        else:
-            img_a, img_b = self.image_proc(img), self.image_proc(img)
-
-
-        # -------- text -----------------------------------------------------
-        plot = item["plot"] 
-        return  [img_a, plot], [img_b, plot]
-    
-
-
-import torch
-import torch.nn as nn
-from typing import List
-from lavis.models import load_model
-
-
-
-class Blip2VisionTransformer(nn.Module):
-    """ BLIP2 pretrained vision encoder"""
-
-    def __init__(self, output_value: str = 'token_embeddings'):
-        super().__init__()
-        assert output_value in {'embedding', 'token_embeddings'}
-        self.output_value = output_value
-        self.model = load_model(name="blip2_feature_extractor", model_type="pretrain")
-        # Freeze all weights (no fine-tuning)
-        for params in self.model.parameters():
-            params.requires_grad = False
-
-    def forward(self, x: torch.Tensor):
-        features = self.model.extract_features(dict(image=x), mode="image")
-        if self.output_value == "embedding":
-            return features["image_embeds_proj"][:, 0, :] # shape (B, 256)
-        else:
-            return features["image_embeds"] # shape (B, L, 768)
-
-
-class Blip2LanguageTransformer(nn.Module):
-    """ BLIP-2 pretrained text encoder that implements random masking of input text.
-    """
-
-    def __init__(self,
-                 output_value: str = 'token_embeddings',
-                 mask_prob: float = 0.0
-                 ):
-        """
-        :param output_value:  Default "token_embeddings", to get wordpiece token embeddings with shape (N, L, 768)
-            where N == batch size, L == # tokens
-            Can be set to "embedding" to get sentence embeddings with shape (N, 768).
-        :param mask_prob: probability of randomly masking input tokens with mask tokens.
-        """
-
-        super().__init__()
-        assert output_value in {"token_embeddings", "embedding"}
-
-        self.model = load_model(name="blip2_feature_extractor", model_type="pretrain")
-        # Feeze all weights (no fine-tuning)
-        for params in self.model.parameters():
-            params.requires_grad = False
-
-        mask_ignore_token_ids = [self.model.tokenizer.pad_token_id,
-                                 self.model.tokenizer.cls_token_id,
-                                 self.model.tokenizer.sep_token_id]
-        mask_token_id = self.model.tokenizer.mask_token_id
-        self.mask = TextMasking(mask_prob, mask_token_id, mask_ignore_token_ids)
-        self.output_value = output_value
-
-    def forward(self, x: List[str]):
-        text = self.model.tokenizer(x, return_tensors="pt",
-                                    padding=True, truncation=True).to(self.model.device)
-        text["input_ids"] = self.mask(text["input_ids"]).to(self.model.device)
-
-        # return text features
-        with torch.no_grad():
-            text_output = self.model.Qformer.bert(
-                    text.input_ids,
-                    attention_mask=text.attention_mask,
-                    return_dict=True,
-                )
-        text_embeds = text_output.last_hidden_state
-        attn_mask = text.attention_mask == 0   
-          
-        if self.output_value == "embedding":
-            return text_embeds[:, 0, :]
-        return {"token_embeddings": text_embeds,
-                "padding_mask":    attn_mask}
-    
-
-
-
-def get_world_size():
-    if not is_dist_avail_and_initialized():
-        return 1
-    return dist.get_world_size()
-
-
-class GatherLayer(autograd.Function):
-    """
-    Gather tensors from all workers with support for backward propagation:
-    This implementation does not cut the gradients as torch.distributed.all_gather does.
-    """
-
-    @staticmethod
-    def forward(ctx, x):
-        output = [torch.zeros_like(x) for _ in range(dist.get_world_size())]
-        dist.all_gather(output, x)
-        return tuple(output)
-
-    @staticmethod
-    def backward(ctx, *grads):
-        all_gradients = torch.stack(grads)
-        dist.all_reduce(all_gradients)
-        return all_gradients[dist.get_rank()]
-
-def all_gather_batch_with_grad(tensors):
-    """
-    Performs all_gather operation on the provided tensors.
-    Graph remains connected for backward grad computation.
-    """
-    # Queue the gathered tensors
-    world_size = get_world_size()
-    # There is no need for reduction in the single-proc case
-    if world_size == 1:
-        return tensors
-    tensor_list = []
-    output_tensor = []
-
-    for tensor in tensors:
-        tensor_all = GatherLayer.apply(tensor)
-        tensor_list.append(tensor_all)
-
-    for tensor_all in tensor_list:
-        output_tensor.append(torch.cat(tensor_all, dim=0))
-    return output_tensor
+Image.MAX_IMAGE_PIXELS = None
 
 
 
@@ -593,7 +247,7 @@ def main():
         train_len=train_len,
     )
 
-    wandb_logger = WandbLogger(project="last_time", name="trial", log_model=True)
+    wandb_logger = WandbLogger(project="last_time", name="final_shot", log_model=True)
 
     ckpt = ModelCheckpoint(
         dirpath="checkpoints",
@@ -608,7 +262,7 @@ def main():
     trainer = pl.Trainer(
         max_epochs=100,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
-        devices=1,
+        devices="auto",
         strategy="ddp" if torch.cuda.device_count() > 1 else "auto",
         callbacks=[ckpt, lr_monitor],
         logger=wandb_logger,
@@ -618,7 +272,3 @@ def main():
 
     trainer.fit(model, dm)
     print(f"\nBest checkpoint stored at: {ckpt.best_model_path}")
-
-
-if __name__ == "__main__":
-    main()

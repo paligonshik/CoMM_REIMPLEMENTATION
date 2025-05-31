@@ -68,14 +68,9 @@ class Blip2LanguageTransformer(nn.Module):
                     return_dict=True,
                 )
         text_embeds = text_output.last_hidden_state
+        attn_mask = text.attention_mask == 0   
+          
         if self.output_value == "embedding":
             return text_embeds[:, 0, :]
-        return text_embeds
-    
-
-if __name__ == "__main__":
-    blip_vision_encoder = Blip2VisionTransformer()
-    blip_text_encoder = Blip2LanguageTransformer()
-
-    text = ["Hello, world!"]
-    print(blip_text_encoder(text).shape)
+        return {"token_embeddings": text_embeds,
+                "padding_mask":    attn_mask}
