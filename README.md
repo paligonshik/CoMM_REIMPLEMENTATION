@@ -65,7 +65,9 @@ CoMM trains by maximizing agreement between **augmented multimodal views** and *
 
 The InfoNCE estimator is defined as:
 
-$$\hat{I}_{\text{NCE}}(Z, Z') = \mathbb{E}_{z,z'_{\text{pos}} \sim p(Z,Z')} \left[ \log \frac{\exp \text{sim}(z, z'_{\text{pos}})}{\sum_{z'_{\text{neg}}} \exp \text{sim}(z, z'_{\text{neg}})} \right] \quad (6)$$
+$$
+\hat{I}_{\text{NCE}}(Z, Z') = \mathbb{E}_{z,z'_{\text{pos}} \sim p(Z,Z')} \left[ \log \frac{\exp \text{sim}(z, z'_{\text{pos}})}{\sum_{z'_{\text{neg}}} \exp \text{sim}(z, z'_{\text{neg}})} \right]
+$$
 
 ### CoMM Loss Function
 
