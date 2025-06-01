@@ -65,16 +65,16 @@ CoMM trains by maximizing agreement between **augmented multimodal views** and *
 
 The InfoNCE estimator is defined as:
 
-$$
+```math
 \hat{I}_{\text{NCE}}(Z, Z') = \mathbb{E}_{z,z'_{\text{pos}} \sim p(Z,Z')} \left[ \log \frac{\exp \text{sim}(z, z'_{\text{pos}})}{\sum_{z'_{\text{neg}}} \exp \text{sim}(z, z'_{\text{neg}})} \right]
-$$
+```
 
 ### CoMM Loss Function
 
 Given this estimator, our final training loss can be written as:
-
-$$\mathcal{L}_{\text{CoMM}} = -\underbrace{\hat{I}_{\text{NCE}}(Z', Z'')}_{\approx R+S+\sum_{i=1}^{n} U_i} - \sum_{i=1}^{n} \frac{1}{2} \underbrace{\left(\hat{I}_{\text{NCE}}(Z_i, Z') + \hat{I}_{\text{NCE}}(Z_i, Z'')\right)}_{\approx R+U_i} =: \mathcal{L} + \sum_{i=1}^{n} \mathcal{L}_i \quad (7)$$
-
+```math 
+\mathcal{L}_{\text{CoMM}} = -\underbrace{\hat{I}_{\text{NCE}}(Z', Z'')}_{\approx R+S+\sum_{i=1}^{n} U_i} - \sum_{i=1}^{n} \frac{1}{2} \underbrace{\left(\hat{I}_{\text{NCE}}(Z_i, Z') + \hat{I}_{\text{NCE}}(Z_i, Z'')\right)}_{\approx R+U_i} =: \mathcal{L} + \sum_{i=1}^{n} \mathcal{L}_i \quad (7)
+```
 Where:
 - **Z'** and **Z''** are augmented multimodal representations
 - **Z_i** represents single-modality representations  
