@@ -5,7 +5,7 @@ import math
 import torch
 from pathlib import Path
 from PIL import Image
-from models.comm import CoMMCore
+from src.models.comm import CoMMCore
 from src.dataloaders.data_loaders import MMIMDBDataModule
 from src.enoders.blip import Blip2LanguageTransformer, Blip2VisionTransformer
 from torch.optim import AdamW

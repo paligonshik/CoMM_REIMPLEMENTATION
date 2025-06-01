@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from typing import List
 from lavis.models import load_model
-from utils.utils import TextMasking
+from src.utils.utils import TextMasking
 
 
 class Blip2VisionTransformer(nn.Module):

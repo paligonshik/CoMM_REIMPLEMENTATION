@@ -1,7 +1,6 @@
-
-from dataloaders.data_loaders import IMDbDataModule
-from enoders.blip import Blip2LanguageTransformer, Blip2VisionTransformer
-from models.comm import CoMMCore
+from src.dataloaders.data_loaders import IMDbDataModule
+from src.enoders.blip import Blip2LanguageTransformer, Blip2VisionTransformer
+from src.models.comm import CoMMCore
 import math, torch, pytorch_lightning as pl
 from torch import nn
 from pytorch_lightning.loggers import WandbLogger
@@ -12,9 +11,9 @@ from torchmetrics.classification import MultilabelF1Score
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import numpy as np
 from sklearn.metrics import f1_score
+from PIL import Image
 
-
-
+Image.MAX_IMAGE_PIXELS = None
     
 
 class CoMMGenre(pl.LightningModule):

@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
-from utils.utils import GaussianBlur, get_unique_genres
+from src.utils.utils import GaussianBlur, get_unique_genres
 import pytorch_lightning as pl
 from PIL import Image
 import torch
