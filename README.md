@@ -1,6 +1,6 @@
 # 🎬 CoMM Reimplementation (MM-IMDb)
 
-This project is a reimplementation of the paper  
+This project is a implementation of the paper  
 **"What to Align in Multimodal Contrastive Learning?"**  
 **[arXiv:2409.07402](https://arxiv.org/abs/2409.07402)**
 
